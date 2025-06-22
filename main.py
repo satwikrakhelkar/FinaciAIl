@@ -4,6 +4,7 @@ import json
 from typing import Dict, List, Optional
 import time
 
+
 # Page configuration
 st.set_page_config(
     page_title="HuggingFace AI Chatbot",
@@ -55,6 +56,15 @@ st.markdown("""
         border-radius: 8px;
         margin: 1rem 0;
     }
+    
+    .model-category {
+        background-color: #e8f5e8;
+        padding: 0.5rem;
+        border-radius: 5px;
+        margin: 0.2rem 0;
+        font-weight: bold;
+        color: #2e7d32;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -71,7 +81,7 @@ class HuggingFaceChatbot:
         """Query a Hugging Face model via API"""
         url = f"{self.base_url}/{model_name}"
         
-        # Default parameters
+        # Default parameters - adjusted for Qwen models
         default_params = {
             "max_new_tokens": 150,
             "temperature": 0.7,
@@ -79,6 +89,15 @@ class HuggingFaceChatbot:
             "do_sample": True,
             "return_full_text": False
         }
+        
+        # Special handling for Qwen models
+        if "qwen" in model_name.lower():
+            default_params.update({
+                "max_new_tokens": 200,
+                "temperature": 0.8,
+                "top_p": 0.95,
+                "repetition_penalty": 1.1
+            })
         
         if parameters:
             default_params.update(parameters)
@@ -97,48 +116,64 @@ class HuggingFaceChatbot:
     
     def get_response(self, model_name: str, prompt: str, parameters: Dict = None) -> str:
         """Get formatted response from the model"""
-        # Format prompt for instruct models
-        if "Instruct" in model_name or "Chat" in model_name or "Qwen" in model_name:
-            # Format for instruction/chat models
-            if "Qwen" in model_name:
-                formatted_prompt = f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-            else:
-                formatted_prompt = f"Human: {prompt}\nAssistant:"
-        else:
-            formatted_prompt = prompt
-        
-        result = self.query_model(model_name, formatted_prompt, parameters)
+        result = self.query_model(model_name, prompt, parameters)
         
         if "error" in result:
-            # Handle model loading errors
-            if "loading" in str(result["error"]).lower():
-                return "⏳ Model is loading, please wait a moment and try again..."
-            return f"❌ Error: {result['error']}"
+            return f"Error: {result['error']}"
         
         try:
             # Handle different response formats
             if isinstance(result, list) and len(result) > 0:
                 if "generated_text" in result[0]:
-                    response = result[0]["generated_text"].strip()
-                    # Remove the prompt from response for instruct models
-                    if formatted_prompt in response:
-                        response = response.replace(formatted_prompt, "").strip()
-                    return response
+                    return result[0]["generated_text"].strip()
                 elif "text" in result[0]:
                     return result[0]["text"].strip()
             elif isinstance(result, dict):
                 if "generated_text" in result:
-                    response = result["generated_text"].strip()
-                    # Remove the prompt from response for instruct models
-                    if formatted_prompt in response:
-                        response = response.replace(formatted_prompt, "").strip()
-                    return response
+                    return result["generated_text"].strip()
                 elif "text" in result:
                     return result["text"].strip()
             
             return str(result)
         except (KeyError, IndexError, TypeError):
             return "Sorry, I couldn't process the response properly."
+
+def get_model_options():
+    """Return categorized model options"""
+    return {
+        "🚀 Qwen Models (Alibaba)": [
+            "Qwen/Qwen2-0.5B-Instruct",
+            "Qwen/Qwen2-1.5B-Instruct", 
+            "Qwen/Qwen1.5-0.5B-Chat",
+            "Qwen/Qwen1.5-1.8B-Chat",
+            "Qwen/Qwen1.5-4B-Chat",
+            "Qwen/Qwen1.5-7B-Chat",
+            "Qwen/Qwen-1_8B-Chat",
+            "Qwen/Qwen-7B-Chat"
+        ],
+        "💬 Conversational Models": [
+            "microsoft/DialoGPT-medium",
+            "microsoft/DialoGPT-large",
+            "facebook/blenderbot-400M-distill",
+            "facebook/blenderbot-1B-distill"
+        ],
+        "🧠 Instruction Models": [
+            "google/flan-t5-base",
+            "google/flan-t5-large",
+            "google/flan-t5-xl"
+        ],
+        "📝 Text Generation": [
+            "gpt2",
+            "gpt2-medium",
+            "distilgpt2",
+            "EleutherAI/gpt-neo-125M",
+            "EleutherAI/gpt-neo-1.3B"
+        ],
+        "🔧 Code Models": [
+            "microsoft/CodeGPT-small-py",
+            "Salesforce/codegen-350M-mono"
+        ]
+    }
 
 def initialize_session_state():
     """Initialize session state variables"""
@@ -176,102 +211,44 @@ def main():
     with st.sidebar:
         st.header("⚙️ Configuration")
         
-        # Get API token from secrets
-        try:
-            api_token = st.secrets["HUGGINGFACE_API_TOKEN"]
-            st.success("✅ API Token loaded from secrets")
-        except KeyError:
-            st.error("❌ HUGGINGFACE_API_TOKEN not found in secrets")
-            api_token = None
-        except Exception as e:
-            st.error(f"❌ Error loading secrets: {str(e)}")
-            api_token = None
+        # API Token input
+        api_token = st.text_input(
+            "HuggingFace API Token",
+            type="password",
+            help="Enter your HuggingFace API token. Get one at https://huggingface.co/settings/tokens"
+        )
         
         # Model selection with categories
-        st.subheader("🤖 Model Selection")
+        st.subheader("🤖 Select AI Model")
+        model_options = get_model_options()
         
-        model_categories = {
-            "Qwen Models (Multilingual)": [
-                "Qwen/Qwen2.5-0.5B-Instruct",
-                "Qwen/Qwen2.5-1.5B-Instruct",
-                "Qwen/Qwen2.5-3B-Instruct",
-                "Qwen/Qwen2.5-7B-Instruct",
-                "Qwen/Qwen2-0.5B-Instruct",
-                "Qwen/Qwen2-1.5B-Instruct",
-                "Qwen/Qwen2-7B-Instruct",
-                "Qwen/Qwen1.5-0.5B-Chat",
-                "Qwen/Qwen1.5-1.8B-Chat",
-                "Qwen/Qwen1.5-4B-Chat",
-                "Qwen/Qwen1.5-7B-Chat"
-            ],
-            "Conversational Models": [
-                "microsoft/DialoGPT-medium",
-                "microsoft/DialoGPT-large",
-                "facebook/blenderbot-400M-distill",
-                "facebook/blenderbot-1B-distill"
-            ],
-            "Instruction Following": [
-                "google/flan-t5-base",
-                "google/flan-t5-large",
-                "google/flan-t5-small"
-            ],
-            "General Purpose": [
-                "gpt2",
-                "gpt2-medium",
-                "distilgpt2"
-            ],
-            "Code & Technical": [
-                "huggingface/CodeBERTa-small-v1",
-                "microsoft/CodeGPT-small-py"
-            ]
-        }
-        
-        # Flatten all models for the selectbox
+        # Create flattened list for selectbox
         all_models = []
-        for category, models in model_categories.items():
+        for category, models in model_options.items():
             all_models.extend(models)
         
         selected_model = st.selectbox(
-            "Select Model",
+            "Choose Model",
             all_models,
             index=0,
-            help="Choose the AI model for conversation. Qwen models excel at multilingual conversations."
+            help="Choose the HuggingFace model for conversation"
         )
         
-        # Show model category info
-        model_category = None
-        for category, models in model_categories.items():
+        # Show model category
+        for category, models in model_options.items():
             if selected_model in models:
-                model_category = category
+                st.markdown(f'<div class="model-category">{category}</div>', unsafe_allow_html=True)
                 break
         
-        if model_category:
-            st.info(f"📂 Category: {model_category}")
-            
-        # Model-specific information
-        if "Qwen" in selected_model:
-            st.markdown("""
-            <div style="background-color: #e8f4f8; padding: 10px; border-radius: 5px; margin: 10px 0;">
-                <strong>🚀 Qwen Model Features:</strong><br>
-                • Excellent multilingual support (Chinese, English, etc.)<br>
-                • Strong instruction following capabilities<br>
-                • Good at reasoning and conversation<br>
-                • Optimized for chat and instruct tasks
-            </div>
-            """, unsafe_allow_html=True)
-        
-        selected_model = st.selectbox(
-            "Select Model",
-            all_models,
-            index=0,
-            help="Choose the AI model for conversation. Qwen models excel at multilingual conversations."
-        )
-        
         # Model parameters
-        st.subheader("Model Parameters")
-        max_tokens = st.slider("Max New Tokens", 50, 500, 150)
-        temperature = st.slider("Temperature", 0.1, 2.0, 0.7, 0.1)
-        top_p = st.slider("Top P", 0.1, 1.0, 0.9, 0.1)
+        st.subheader("🔧 Model Parameters")
+        max_tokens = st.slider("Max New Tokens", 50, 500, 200 if "qwen" in selected_model.lower() else 150)
+        temperature = st.slider("Temperature", 0.1, 2.0, 0.8 if "qwen" in selected_model.lower() else 0.7, 0.1)
+        top_p = st.slider("Top P", 0.1, 1.0, 0.95 if "qwen" in selected_model.lower() else 0.9, 0.1)
+        
+        # Additional parameters for Qwen models
+        if "qwen" in selected_model.lower():
+            repetition_penalty = st.slider("Repetition Penalty", 1.0, 1.5, 1.1, 0.05)
         
         # Configure API button
         if st.button("🔧 Configure API", type="primary"):
@@ -280,18 +257,18 @@ def main():
                 st.session_state.api_configured = True
                 st.success("API configured successfully!")
             else:
-                st.error("Please configure HUGGINGFACE_API_TOKEN in secrets")
+                st.error("Please enter your API token")
         
         # Model info
         st.markdown("""
         <div class="sidebar-info">
-            <h4>💡 Tips:</h4>
+            <h4>💡 Model Tips:</h4>
             <ul>
-                <li>API token is securely loaded from secrets</li>
-                <li>Qwen models are great for multilingual chats</li>
-                <li>Different models have different strengths</li>
-                <li>Adjust temperature for creativity</li>
-                <li>Lower temperature = more focused responses</li>
+                <li><strong>Qwen Models:</strong> Latest from Alibaba, great for multilingual tasks</li>
+                <li><strong>DialoGPT:</strong> Optimized for conversations</li>
+                <li><strong>FLAN-T5:</strong> Excellent instruction following</li>
+                <li><strong>BlenderBot:</strong> Open-domain conversations</li>
+                <li><strong>GPT-2:</strong> Classic text generation</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -303,27 +280,32 @@ def main():
     
     # Main chat interface
     if not st.session_state.api_configured:
-        if api_token:
-            st.info("🔧 API token loaded successfully. Click 'Configure API' to start chatting.")
-        else:
-            st.warning("⚠️ Please configure your HuggingFace API token in Streamlit secrets to start chatting.")
+        st.warning("⚠️ Please configure your HuggingFace API token in the sidebar to start chatting.")
         
         # Instructions
         st.markdown("""
-        ### Configuration Required:
-        1. **Add to Secrets**: Configure `HUGGINGFACE_API_TOKEN` in your Streamlit secrets
-        2. **Get API Token**: Visit [HuggingFace Tokens](https://huggingface.co/settings/tokens) and create a new token
-        3. **Select Model**: Choose your preferred AI model from the sidebar
+        ### How to get started:
+        1. **Get API Token**: Visit [HuggingFace Tokens](https://huggingface.co/settings/tokens) and create a new token
+        2. **Enter Token**: Paste your token in the sidebar
+        3. **Select Model**: Choose your preferred AI model (try the new Qwen models!)
         4. **Start Chatting**: Click "Configure API" and begin your conversation!
         
-        ### Popular Models:
-        - **Qwen Models**: Excellent multilingual models with strong reasoning
-        - **DialoGPT**: Great for conversational AI
-        - **BlenderBot**: Excellent for open-domain conversations
-        - **FLAN-T5**: Good for instruction-following tasks
-        - **GPT-2**: Classic language model for text generation
+        ### ✨ New Qwen Models Added:
+        - **Qwen2-0.5B/1.5B-Instruct**: Latest lightweight instruction models
+        - **Qwen1.5-Chat Series**: Various sizes from 0.5B to 7B parameters
+        - **Qwen-7B-Chat**: Large conversational model
+        
+        ### Popular Model Categories:
+        - **🚀 Qwen Models**: State-of-the-art from Alibaba, multilingual support
+        - **💬 Conversational**: DialoGPT, BlenderBot for natural conversations  
+        - **🧠 Instruction**: FLAN-T5 models for following instructions
+        - **📝 Text Generation**: GPT-2 variants for creative writing
+        - **🔧 Code Models**: Specialized for programming tasks
         """)
     else:
+        # Display current model info
+        st.info(f"💬 Currently using: **{selected_model}**")
+        
         # Display chat messages
         display_chat_messages()
         
@@ -360,6 +342,10 @@ def main():
                     "return_full_text": False
                 }
                 
+                # Add repetition penalty for Qwen models
+                if "qwen" in selected_model.lower():
+                    parameters["repetition_penalty"] = repetition_penalty
+                
                 # Get AI response
                 ai_response = st.session_state.chatbot.get_response(
                     selected_model, 
@@ -381,7 +367,7 @@ def main():
     st.markdown("""
     <div style="text-align: center;">
         <p>Built with ❤️ using Streamlit and HuggingFace API</p>
-        <p><small>Make sure to keep your API token secure and never share it publicly!</small></p>
+        <p><small>Now featuring Qwen models from Alibaba! Keep your API token secure.</small></p>
     </div>
     """, unsafe_allow_html=True)
 
