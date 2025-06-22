@@ -211,12 +211,18 @@ def main():
     with st.sidebar:
         st.header("⚙️ Configuration")
         
-        # API Token input
-        api_token = st.text_input(
-            "HuggingFace API Token",
-            type="password",
-            help="Enter your HuggingFace API token. Get one at https://huggingface.co/settings/tokens"
-        )
+        # Try to get API token from secrets first, then allow manual input as fallback
+        try:
+            api_token = st.secrets["HUGGINGFACE_API_TOKEN"]
+            st.success("✅ API Token loaded from secrets")
+            st.info("🔒 Using secure token from deployment settings")
+        except KeyError:
+            st.warning("⚠️ No API token found in secrets")
+            api_token = st.text_input(
+                "HuggingFace API Token (Fallback)",
+                type="password",
+                help="Enter your HuggingFace API token. Get one at https://huggingface.co/settings/tokens"
+            )
         
         # Model selection with categories
         st.subheader("🤖 Select AI Model")
@@ -259,7 +265,15 @@ def main():
             else:
                 st.error("Please enter your API token")
         
-        # Model info
+        # API Token status and model info
+        if api_token:
+            st.markdown("""
+            <div class="sidebar-info">
+                <h4>🔐 Security Status:</h4>
+                <p>✅ API Token is configured securely</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
         st.markdown("""
         <div class="sidebar-info">
             <h4>💡 Model Tips:</h4>
@@ -280,13 +294,30 @@ def main():
     
     # Main chat interface
     if not st.session_state.api_configured:
-        st.warning("⚠️ Please configure your HuggingFace API token in the sidebar to start chatting.")
+        if not api_token:
+            st.error("🔑 **API Token Required**")
+            st.markdown("""
+            ### For Development (Local):
+            1. Create a `.streamlit/secrets.toml` file in your project root
+            2. Add your token: `HUGGINGFACE_API_TOKEN = "your_token_here"`
+            3. Restart the application
+            
+            ### For Production (Streamlit Cloud):
+            1. Go to your app settings in Streamlit Cloud
+            2. Navigate to "Secrets" section  
+            3. Add the secret as shown in the deployment guide below
+            
+            ### Manual Entry (Fallback):
+            You can also enter your token manually in the sidebar as a fallback.
+            """)
+        else:
+            st.warning("⚠️ Click 'Configure API' to start using the chatbot.")
         
         # Instructions
         st.markdown("""
         ### How to get started:
         1. **Get API Token**: Visit [HuggingFace Tokens](https://huggingface.co/settings/tokens) and create a new token
-        2. **Enter Token**: Paste your token in the sidebar
+        2. **Secure Setup**: Use secrets for production deployment (see guide below)
         3. **Select Model**: Choose your preferred AI model (try the new Qwen models!)
         4. **Start Chatting**: Click "Configure API" and begin your conversation!
         
