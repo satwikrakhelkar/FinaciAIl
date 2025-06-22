@@ -97,21 +97,42 @@ class HuggingFaceChatbot:
     
     def get_response(self, model_name: str, prompt: str, parameters: Dict = None) -> str:
         """Get formatted response from the model"""
-        result = self.query_model(model_name, prompt, parameters)
+        # Format prompt for instruct models
+        if "Instruct" in model_name or "Chat" in model_name or "Qwen" in model_name:
+            # Format for instruction/chat models
+            if "Qwen" in model_name:
+                formatted_prompt = f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
+            else:
+                formatted_prompt = f"Human: {prompt}\nAssistant:"
+        else:
+            formatted_prompt = prompt
+        
+        result = self.query_model(model_name, formatted_prompt, parameters)
         
         if "error" in result:
-            return f"Error: {result['error']}"
+            # Handle model loading errors
+            if "loading" in str(result["error"]).lower():
+                return "⏳ Model is loading, please wait a moment and try again..."
+            return f"❌ Error: {result['error']}"
         
         try:
             # Handle different response formats
             if isinstance(result, list) and len(result) > 0:
                 if "generated_text" in result[0]:
-                    return result[0]["generated_text"].strip()
+                    response = result[0]["generated_text"].strip()
+                    # Remove the prompt from response for instruct models
+                    if formatted_prompt in response:
+                        response = response.replace(formatted_prompt, "").strip()
+                    return response
                 elif "text" in result[0]:
                     return result[0]["text"].strip()
             elif isinstance(result, dict):
                 if "generated_text" in result:
-                    return result["generated_text"].strip()
+                    response = result["generated_text"].strip()
+                    # Remove the prompt from response for instruct models
+                    if formatted_prompt in response:
+                        response = response.replace(formatted_prompt, "").strip()
+                    return response
                 elif "text" in result:
                     return result["text"].strip()
             
@@ -166,25 +187,84 @@ def main():
             st.error(f"❌ Error loading secrets: {str(e)}")
             api_token = None
         
-        # Model selection
-        model_options = [
-            "microsoft/DialoGPT-medium",
-            "microsoft/DialoGPT-large",
-            "facebook/blenderbot-400M-distill",
-            "facebook/blenderbot-1B-distill",
-            "google/flan-t5-base",
-            "google/flan-t5-large",
-            "huggingface/CodeBERTa-small-v1",
-            "gpt2",
-            "gpt2-medium",
-            "distilgpt2"
-        ]
+        # Model selection with categories
+        st.subheader("🤖 Model Selection")
+        
+        model_categories = {
+            "Qwen Models (Multilingual)": [
+                "Qwen/Qwen2.5-0.5B-Instruct",
+                "Qwen/Qwen2.5-1.5B-Instruct",
+                "Qwen/Qwen2.5-3B-Instruct",
+                "Qwen/Qwen2.5-7B-Instruct",
+                "Qwen/Qwen2-0.5B-Instruct",
+                "Qwen/Qwen2-1.5B-Instruct",
+                "Qwen/Qwen2-7B-Instruct",
+                "Qwen/Qwen1.5-0.5B-Chat",
+                "Qwen/Qwen1.5-1.8B-Chat",
+                "Qwen/Qwen1.5-4B-Chat",
+                "Qwen/Qwen1.5-7B-Chat"
+            ],
+            "Conversational Models": [
+                "microsoft/DialoGPT-medium",
+                "microsoft/DialoGPT-large",
+                "facebook/blenderbot-400M-distill",
+                "facebook/blenderbot-1B-distill"
+            ],
+            "Instruction Following": [
+                "google/flan-t5-base",
+                "google/flan-t5-large",
+                "google/flan-t5-small"
+            ],
+            "General Purpose": [
+                "gpt2",
+                "gpt2-medium",
+                "distilgpt2"
+            ],
+            "Code & Technical": [
+                "huggingface/CodeBERTa-small-v1",
+                "microsoft/CodeGPT-small-py"
+            ]
+        }
+        
+        # Flatten all models for the selectbox
+        all_models = []
+        for category, models in model_categories.items():
+            all_models.extend(models)
         
         selected_model = st.selectbox(
             "Select Model",
-            model_options,
+            all_models,
             index=0,
-            help="Choose the HuggingFace model for conversation"
+            help="Choose the AI model for conversation. Qwen models excel at multilingual conversations."
+        )
+        
+        # Show model category info
+        model_category = None
+        for category, models in model_categories.items():
+            if selected_model in models:
+                model_category = category
+                break
+        
+        if model_category:
+            st.info(f"📂 Category: {model_category}")
+            
+        # Model-specific information
+        if "Qwen" in selected_model:
+            st.markdown("""
+            <div style="background-color: #e8f4f8; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                <strong>🚀 Qwen Model Features:</strong><br>
+                • Excellent multilingual support (Chinese, English, etc.)<br>
+                • Strong instruction following capabilities<br>
+                • Good at reasoning and conversation<br>
+                • Optimized for chat and instruct tasks
+            </div>
+            """, unsafe_allow_html=True)
+        
+        selected_model = st.selectbox(
+            "Select Model",
+            all_models,
+            index=0,
+            help="Choose the AI model for conversation. Qwen models excel at multilingual conversations."
         )
         
         # Model parameters
@@ -208,6 +288,7 @@ def main():
             <h4>💡 Tips:</h4>
             <ul>
                 <li>API token is securely loaded from secrets</li>
+                <li>Qwen models are great for multilingual chats</li>
                 <li>Different models have different strengths</li>
                 <li>Adjust temperature for creativity</li>
                 <li>Lower temperature = more focused responses</li>
@@ -236,6 +317,7 @@ def main():
         4. **Start Chatting**: Click "Configure API" and begin your conversation!
         
         ### Popular Models:
+        - **Qwen Models**: Excellent multilingual models with strong reasoning
         - **DialoGPT**: Great for conversational AI
         - **BlenderBot**: Excellent for open-domain conversations
         - **FLAN-T5**: Good for instruction-following tasks
