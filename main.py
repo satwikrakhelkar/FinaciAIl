@@ -155,12 +155,16 @@ def main():
     with st.sidebar:
         st.header("⚙️ Configuration")
         
-        # API Token input
-        api_token = st.text_input(
-            "HuggingFace API Token",
-            type="password",
-            help="Enter your HuggingFace API token. Get one at https://huggingface.co/settings/tokens"
-        )
+        # Get API token from secrets
+        try:
+            api_token = st.secrets["HUGGINGFACE_API_TOKEN"]
+            st.success("✅ API Token loaded from secrets")
+        except KeyError:
+            st.error("❌ HUGGINGFACE_API_TOKEN not found in secrets")
+            api_token = None
+        except Exception as e:
+            st.error(f"❌ Error loading secrets: {str(e)}")
+            api_token = None
         
         # Model selection
         model_options = [
@@ -196,14 +200,14 @@ def main():
                 st.session_state.api_configured = True
                 st.success("API configured successfully!")
             else:
-                st.error("Please enter your API token")
+                st.error("Please configure HUGGINGFACE_API_TOKEN in secrets")
         
         # Model info
         st.markdown("""
         <div class="sidebar-info">
             <h4>💡 Tips:</h4>
             <ul>
-                <li>Get your free API token from HuggingFace</li>
+                <li>API token is securely loaded from secrets</li>
                 <li>Different models have different strengths</li>
                 <li>Adjust temperature for creativity</li>
                 <li>Lower temperature = more focused responses</li>
@@ -218,14 +222,17 @@ def main():
     
     # Main chat interface
     if not st.session_state.api_configured:
-        st.warning("⚠️ Please configure your HuggingFace API token in the sidebar to start chatting.")
+        if api_token:
+            st.info("🔧 API token loaded successfully. Click 'Configure API' to start chatting.")
+        else:
+            st.warning("⚠️ Please configure your HuggingFace API token in Streamlit secrets to start chatting.")
         
         # Instructions
         st.markdown("""
-        ### How to get started:
-        1. **Get API Token**: Visit [HuggingFace Tokens](https://huggingface.co/settings/tokens) and create a new token
-        2. **Enter Token**: Paste your token in the sidebar
-        3. **Select Model**: Choose your preferred AI model
+        ### Configuration Required:
+        1. **Add to Secrets**: Configure `HUGGINGFACE_API_TOKEN` in your Streamlit secrets
+        2. **Get API Token**: Visit [HuggingFace Tokens](https://huggingface.co/settings/tokens) and create a new token
+        3. **Select Model**: Choose your preferred AI model from the sidebar
         4. **Start Chatting**: Click "Configure API" and begin your conversation!
         
         ### Popular Models:
